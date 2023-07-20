@@ -13,7 +13,7 @@ socket.on('loadProducts', (products) => {
             productCard.innerHTML = `
             <h2>${product.title}</h2>
             <p>Price: $${product.price}</p>
-            <p>Description: ${product.description}</p>
+            <p>Category: ${product.category}</p>
             `;
 
             productsContainer.appendChild(productCard);

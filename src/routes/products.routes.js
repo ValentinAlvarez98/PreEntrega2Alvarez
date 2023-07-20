@@ -1,38 +1,65 @@
+// Se importa el enrutador de Express.
 import {
       Router
 } from 'express';
 
-import Products from "../dao/dbManagers/products.js";
-import ProductsFs from "../dao/fileManagers/products.js";
+// Se importan los managers de productos.
+import ProductsManager from "../dao/dbManagers/products.js";
+import ProductsFsManager from "../dao/fileManagers/products.js";
 
+// Se importan las funciones de manejo de errores desde el helper.
+import {
+      handleTryError,
+      handleTryErrorDB,
+      validateData,
+      validateFields,
+} from '../helpers/handleErrors.js';
+
+// Se crea el enrutador.
 const productsRouter = Router();
-const productsManager = new Products();
-const productsFsManager = new ProductsFs();
 
+// Se crean las instancias de los managers de productos.
+const productsManager = new ProductsManager();
+const productsFsManager = new ProductsFsManager();
+
+// Se crea el endpoint para obtener todos los productos.
 productsRouter.get('/', async (req, res) => {
 
       try {
 
-            let products = await productsManager.getAll();
+            // Se obtienen los parámetros de consulta (si no se obtiene un valor, se asigna un valor por defecto).
+            let {
+                  limit = 10, page = 1, sort, query
+            } = req.query;
 
+            // Se convierten las variables para evitar errores.
+            limit = parseInt(limit);
+            page = parseInt(page);
+            query !== undefined ? query = query.toString() : query = undefined;
+
+            // Se realiza la consulta para obtener todos los productos.
+            const result = await productsManager.getAll({
+                  limit,
+                  page,
+                  sort,
+                  query
+            });
+
+            // Se envía la respuesta al cliente.
             res.send({
-                  status: "success",
-                  payload: products
+                  ...result
             });
 
       } catch (error) {
 
-            console.log("Error en getAll de products: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            // Se maneja el error y se envía un mensaje de error al cliente.
+            handleTryError(res, error);
 
       };
 
 });
 
+// Se crea el endpoint para obtener un producto por su id.
 productsRouter.get('/:id', async (req, res) => {
 
       try {
@@ -41,114 +68,98 @@ productsRouter.get('/:id', async (req, res) => {
                   id
             } = req.params;
 
-            let product = await productsManager.getById(id);
+            // Se obtiene el producto por su id utilizando el manager de productos.
+            const product = await productsManager.getById(id);
 
-            if (!product) return res.status(404).send({
-                  status: "error",
-                  payload: "Producto no encontrado"
-            });
+            // Se valida que el producto exista.
+            validateData(!product, res, 'Producto no encontrado');
 
+            // Se envía el producto al cliente.
             res.send({
-                  status: "success",
+                  status: 'success',
                   payload: product
             });
 
       } catch (error) {
 
-            console.log("Error en getById de products: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            // Se maneja el error y se envía un mensaje de error al cliente.
+            handleTryErrorDB(error);
 
       };
 
 });
 
+// Se crea el endpoint para crear un nuevo producto.
 productsRouter.post('/', async (req, res) => {
 
       try {
 
-            const {
-                  title,
-                  description,
-                  code,
-                  price,
-                  status,
-                  stock,
-                  category,
-                  thumbnails,
-            } = req.body;
+            // Se definen los campos requeridos para crear el producto.
+            const fields = ['title', 'description', 'code', 'price', 'status', 'stock', 'category'];
 
-            if (!title || !description || !code || !price || !status.toString() || !stock || !category) return res.status(400).send({
-                  status: "error",
-                  payload: "Faltan datos obligatorios"
-            });
+            // Se validan los campos requeridos.
+            const isValid = validateFields(req.body, fields);
 
-            let newProduct = {
+            // Se valida que ningún campo requerido haya quedado vacío.
+            validateData(!isValid, res, 'Faltan datos obligatorios');
 
-                  title,
-                  description,
-                  code,
-                  price,
-                  status,
-                  stock,
-                  category,
-                  thumbnails,
-                  id: Math.floor(Math.random() * 100) + 1,
-
+            // Se crea el producto a agregar con un id aleatorio.
+            const newProduct = {
+                  ...req.body,
+                  id: Math.floor(Math.random() * 100) + 1
             };
 
-            let products = await productsManager.getAll();
+            // Se busca si ya existe un producto con el mismo código.
+            const existingProduct = await productsManager.getByCode(newProduct.code);
 
-            if (products.some(product => product.code === newProduct.code)) return res.status(400).send({
-                  status: "error",
-                  payload: "Ya existe un producto con ese código"
-            });
+            // Se valida que no exista un producto con el mismo código.
+            validateData(existingProduct, res, 'Ya existe un producto con ese código');
 
-            if (products.some(product => product.id === newProduct.id)) {
+            // Se hace un máximo de 100 intentos para generar un id único para el producto a agregar.
+            let attempts = 0;
+            const maxAttempts = 100;
 
-                  const maxAttempts = 100;
-                  let attempts = 0;
+            while (attempts < maxAttempts) {
+
+                  const product = await productsManager.getById(newProduct.id);
+
+                  if (!product) {
+                        break;
+                  }
 
                   newProduct.id = Math.floor(Math.random() * 100) + 1;
-
-                  while (products.some(product => product.id === newProduct.id) && attempts < maxAttempts) {
-
-                        newProduct.id = Math.floor(Math.random() * 100) + 1;
-                        attempts++;
-
-                  };
-
-                  if (attempts === maxAttempts) return res.status(400).send({
-                        status: "error",
-                        payload: "Después de 100 intentos, no se pudo generar un id único"
-                  });
+                  attempts++;
 
             };
 
-            let result = await productsManager.saveProduct(newProduct);
+            // Se valida que se haya podido generar un id único para el producto después de los 100 intentos.
+            validateData(attempts === maxAttempts, res, 'No se pudo generar un id para el producto');
+
+            // Se guarda el nuevo producto utilizando saveProduct del manager.
+            const result = await productsManager.saveProduct(newProduct);
+
+            // Se valida que se haya podido guardar el producto.
+            validateData(!result, res, 'No se pudo guardar el producto');
+
+            // Se actualiza el archivo de productos.
             await productsFsManager.getAll();
 
+            // Se envía la respuesta.
             res.send({
-                  status: "success",
-                  payload: result
+                  status: 'success',
+                  payload: `Producto con id: ${newProduct.id}, guardado correctamente en la base de datos`
             });
 
       } catch (error) {
 
-            console.log("Error en saveProduct: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            // Se maneja el error.
+            handleTryErrorDB(error);
 
       };
 
 });
 
+// Se crea el endpoint para actualizar un producto por su id.
 productsRouter.put('/:id', async (req, res) => {
 
       try {
@@ -157,63 +168,52 @@ productsRouter.put('/:id', async (req, res) => {
                   id
             } = req.params;
 
-            const {
-                  title,
-                  description,
-                  code,
-                  price,
-                  status,
-                  stock,
-                  category,
-                  thumbnails,
-            } = req.body;
+            // Se definen los campos requeridos para actualizar el producto.
+            const fields = ['title', 'description', 'code', 'price', 'status', 'stock', 'category'];
 
-            if (!title || !description || !code || !price || !status.toString() || !stock || !category) return res.status(400).send({
-                  status: "error",
-                  payload: "Faltan datos obligatorios"
-            });
+            // Se validan los campos requeridos.
+            const isValid = validateFields(req.body, fields);
 
-            let productToUpdate = await productsManager.getById(id);
+            // Se valida que ningún campo requerido haya quedado vacío.
+            validateData(!isValid, res, 'Faltan datos obligatorios');
 
-            if (!productToUpdate) return res.status(404).send({
-                  status: "error",
-                  payload: "Producto no encontrado"
-            });
+            // Se busca el producto por su id.
+            const productToUpdate = await productsManager.getById(id);
 
+            // Se valida que el producto exista.
+            validateData(!productToUpdate, res, 'Producto no encontrado');
+
+            // Se crea el producto actualizado.
             const productUpdated = {
                   ...productToUpdate,
-                  title,
-                  description,
-                  code,
-                  price,
-                  status,
-                  stock,
-                  category,
-                  thumbnails,
+                  ...req.body
             };
 
-            let result = await productsManager.updateById(id, productUpdated);
+            // Se actualiza el producto utilizando updateById del manager.
+            const result = await productsManager.updateById(id, productUpdated);
 
+            // Se valida que se haya podido actualizar el producto.
+            validateData(!result, res, 'No se pudo actualizar el producto');
+
+            // Se actualiza el archivo de productos.
             await productsFsManager.getAll();
 
-            if (!result) return res.status(400).send({
-                  status: "error",
-                  payload: "No se pudo actualizar el producto"
-            });
-
+            // Se envía la respuesta.
             res.send({
-                  status: "success",
+                  status: 'success',
                   payload: `Producto con id: ${id}, actualizado correctamente en la base de datos`
             });
 
       } catch (error) {
 
-            console.log("Error en updateById: ", error);
+            // Se maneja el error y se envía un mensaje de error al cliente.
+            handleTryErrorDB(error);
 
       };
 
 });
 
+// Se crea el endpoint para eliminar un producto por su id.
 productsRouter.delete('/:id', async (req, res) => {
 
       try {
@@ -222,30 +222,31 @@ productsRouter.delete('/:id', async (req, res) => {
                   id
             } = req.params;
 
-            let productToDelete = await productsManager.getById(id);
+            // Se busca el producto por su id.
+            const productToDelete = await productsManager.getById(id);
 
-            if (!productToDelete) return res.status(404).send({
-                  status: "error",
-                  payload: "Producto no encontrado"
-            });
+            // Se valida que el producto exista.
+            validateData(!productToDelete, res, 'Producto no encontrado');
 
-            let result = await productsManager.deleteById(id);
+            // Se elimina el producto utilizando deleteById del manager.
+            const result = await productsManager.deleteById(id);
 
+            // Se valida que se haya eliminado el producto.
+            validateData(!result, res, 'No se pudo eliminar el producto');
+
+            // Se actualiza el archivo de productos.
             await productsFsManager.getAll();
 
-            if (!result) return res.status(400).send({
-                  status: "error",
-                  payload: "No se pudo eliminar el producto"
-            });
-
+            // Se envía la respuesta.
             res.send({
-                  status: "success",
+                  status: 'success',
                   payload: `Producto con id: ${id}, eliminado correctamente de la base de datos`
             });
 
       } catch (error) {
 
-            console.log("Error en deleteById: ", error);
+            // Se maneja el error y se envía un mensaje de error al cliente.
+            handleTryErrorDB(error);
 
       };
 

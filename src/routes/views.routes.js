@@ -1,88 +1,135 @@
+// Se importan las dependencias necesarias.
 import {
       Router
 } from 'express';
-
+import {
+      handleTryError,
+      validateData
+} from '../helpers/handleErrors.js';
 import Products from "../dao/dbManagers/products.js";
 import ProductsFs from "../dao/fileManagers/products.js";
 
+// Se crean las instancias de los Managers.
 const productsManager = new Products();
 const productsFsManager = new ProductsFs();
 
+// Se crea el enrutador.
 const router = Router();
 
+// Ruta para mostrar el chatBox.
 router.get('/', async (req, res) => {
 
       try {
 
+            // Renderiza la vista index.
             res.render('index');
 
       } catch {
 
-            console.log("Error en endpoint /: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            // Manejo de errores mediante la función handleTryError.
+            handleTryError(res, error);
 
       };
 
 });
 
-router.get('/home', async (req, res) => {
-
-      try {
-
-            let products = await productsManager.getAll();
-
-            if (!products) return res.status(404).send({
-                  status: "error",
-                  payload: "No hay productos en la base de datos"
-            });
-
-            res.render('home', {
-                  products
-            });
-
-      } catch (error) {
-
-            console.log("Error en getAll de products: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
-
-      };
-
-});
-
+// Ruta para mostrar los productos en tiempo real.
 router.get('/realtimeproducts', async (req, res) => {
 
       try {
-
+            // Obtiene todos los productos desde el fileManager.
             let products = await productsFsManager.getAll();
 
-            if (!products) return res.status(404).send({
-                  status: "error",
-                  payload: "No hay productos en la base de datos"
-            });
+            // Valida si no hay productos y envía un mensaje de error al cliente.
+            validateData(!products, res, "No hay productos en la base de datos");
 
+            // Renderiza la vista realtimeproducts, pasando los productos como parámetro.
             res.render('realtimeproducts', {
                   products
             });
 
       } catch (error) {
 
-            console.log("Error en getAll de products: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            // Manejo de errores mediante la función handleTryError.
+            handleTryError(res, error);
 
       };
 
 });
 
+// Ruta para obtener todos los productos o una cantidad limitada de productos.
+router.get('/products', async (req, res) => {
+
+      try {
+
+            // Se obtienen los parámetros de la consulta.
+            const {
+                  page,
+                  limit,
+                  sort,
+                  query
+            } = req.query;
+
+            // Se obtienen los datos de los productos desde el Manager.
+            const productsData = await productsManager.getAll({
+                  limit,
+                  page,
+                  sort,
+                  query,
+            });
+
+            // Se realiza una copia de los productos para evitar problemas que da handlebars con los objetos.
+            productsData.payload.products = productsData.payload.products.map((product) => {
+                  return {
+                        ...JSON.parse(JSON.stringify(product)),
+                  };
+            });
+
+            // Se renderiza la vista products, pasando los datos de los productos como parámetros.
+            res.render('products', {
+                  products: productsData.payload.products,
+                  hasPrevPage: productsData.hasPrevPage,
+                  hasNextPage: productsData.hasNextPage,
+                  prevPage: productsData.prevPage,
+                  nextPage: productsData.nextPage,
+            });
+
+      } catch (error) {
+
+            // Manejo de errores mediante la función handleTryError.
+            handleTryError(res, error);
+
+      };
+
+});
+
+// Ruta para obtener un producto por su id.
+router.get('/products/:id', async (req, res) => {
+
+      try {
+
+            // Se obtiene el id del producto desde los parámetros.
+            const {
+                  id
+            } = req.params;
+
+            // Se obtiene el producto desde el Manager.
+            const product = await productsManager.getById(id);
+
+            // Valida que el producto exista.
+            validateData(!product, res, 'Producto no encontrado');
+
+            // Renderiza la vista productDetails, pasando el producto como parámetro.
+            res.render('productDetails', product);
+
+      } catch (error) {
+
+            // Manejo de errores mediante la función handleTryError.
+            handleTryError(res, error);
+
+      };
+
+});
+
+// Se exporta el enrutador de las vistas.
 export default router;

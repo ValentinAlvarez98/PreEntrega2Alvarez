@@ -66,15 +66,20 @@ export default class ProductFsManager {
 
             try {
 
-                  let products = await productsManager.getAll();
+                  const productsData = await productsManager.getAll({
+                        limit: 20,
+                        page: 1,
+                        sort: undefined,
+                        query: undefined
+                  });
 
-                  if (!products) {
+                  productsData.payload.products = productsData.payload.products.map((product) => {
+                        return {
+                              ...JSON.parse(JSON.stringify(product)),
+                        };
+                  });
 
-                        console.log("No hay productos en la base de datos");
-
-                  };
-
-                  const jsonData = JSON.stringify(products);
+                  const jsonData = JSON.stringify(productsData.payload.products, null, 2);
 
                   await fs.promises.writeFile(this.path, jsonData);
 
