@@ -2,8 +2,16 @@ import {
       Router
 } from 'express';
 
+import cartsModel from '../dao/models/carts.js';
+
 import Carts from "../dao/dbManagers/carts.js";
 import Products from "../dao/dbManagers/products.js";
+
+import {
+      handleTryError,
+      handleTryErrorDB,
+      validateData,
+} from '../helpers/handleErrors.js';
 
 const cartsRouter = Router();
 const cartsManager = new Carts();
@@ -16,10 +24,7 @@ cartsRouter.get('/', async (req, res) => {
 
             let carts = await cartsManager.getAll();
 
-            if (!carts) return res.status(404).send({
-                  status: "error",
-                  payload: "No hay carritos en la base de datos"
-            });
+            validateData(!carts, res, "No hay carritos en la base de datos");
 
             res.send({
                   status: "success",
@@ -28,45 +33,30 @@ cartsRouter.get('/', async (req, res) => {
 
       } catch (error) {
 
-            console.log("Error en getAll de carts: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            handleTryErrorDB(error);
 
       };
 
 });
 
-cartsRouter.get('/:id', async (req, res) => {
-
+cartsRouter.get('/:cid', async (req, res) => {
       try {
-
             const {
-                  id
+                  cid
             } = req.params;
 
-            let cart = await cartsManager.getById(id);
+            const cart = await cartsManager.getById(cid);
 
-            if (!cart) return res.status(404).send({
-                  status: "error",
-                  payload: "Carrito no encontrado"
-            });
+            validateData(!cart, res, "No se encontró el carrito");
 
             res.send({
                   status: "success",
-                  payload: cart
+                  payload: cart,
             });
 
       } catch (error) {
 
-            console.log("Error en getById de carts: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            handleTryErrorDB(error);
 
       };
 
@@ -83,10 +73,7 @@ cartsRouter.post('/', async (req, res) => {
 
             let carts = await cartsManager.getAll();
 
-            if (!carts) return res.status(404).send({
-                  status: "error",
-                  payload: "No hay carritos en la base de datos"
-            });
+            validateData(!carts, res, "No hay carritos en la base de datos");
 
             if (carts.some(cart => cart.id === newCart.id)) {
 
@@ -102,14 +89,13 @@ cartsRouter.post('/', async (req, res) => {
 
                   };
 
-                  if (attempts === maxAttempts) return res.status(400).send({
-                        status: "error",
-                        payload: "Después de 100 intentos, no se pudo generar un id único"
-                  });
+                  validateData(attempts === maxAttempts, res, "No se pudo generar un id para el carrito");
 
             };
 
             let result = await cartsManager.saveCart(newCart);
+
+            validateData(!result, res, "No se pudo guardar el carrito");
 
             res.send({
                   status: "success",
@@ -118,117 +104,109 @@ cartsRouter.post('/', async (req, res) => {
 
       } catch (error) {
 
-            console.log("Error en saveCart de carts: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            handleTryErrorDB(error);
 
       };
 
 });
 
-cartsRouter.put('/:id/product/:pid', async (req, res) => {
+cartsRouter.put('/:cid', async (req, res) => {
       try {
             const {
-                  id,
+                  cid
+            } = req.params;
+            const {
+                  products
+            } = req.body;
+
+            const result = await cartsManager.addProduct(cid, products);
+
+            validateData(!result, res, "No se pudo actualizar el carrito");
+
+            res.send({
+                  status: 'success',
+                  payload: result,
+            });
+      } catch (error) {
+            handleTryErrorDB(error);
+      }
+});
+
+cartsRouter.put('/:cid/products/:pid', async (req, res) => {
+
+      try {
+
+            const {
+                  cid,
+                  pid
+            } = req.params;
+            const {
+                  quantity
+            } = req.body;
+
+            const result = await cartsManager.updateProductQuantity(cid, pid, quantity);
+
+            validateData(!result, res, "No se pudo actualizar la cantidad del producto");
+
+            res.send({
+                  status: 'success',
+                  payload: result,
+            });
+
+      } catch (error) {
+
+            handleTryErrorDB(error);
+
+      };
+
+});
+
+cartsRouter.delete('/:cid/products/:pid', async (req, res) => {
+
+      try {
+
+            const {
+                  cid,
                   pid
             } = req.params;
 
-            const cart = await cartsManager.getById(id);
+            const result = await cartsManager.deleteProduct(cid, pid);
 
-            if (!cart) {
-
-                  return res.status(404).send({
-                        status: "error",
-                        payload: "No existe un carrito con ese id"
-                  });
-
-            };
-
-            const product = await productsManager.getById(pid);
-
-            if (!product) {
-
-                  return res.status(404).send({
-                        status: "error",
-                        payload: "No existe un producto con ese id"
-                  });
-
-            };
-
-            const result = await cartsManager.addProduct(cart, pid);
-
-            if (!result) {
-
-                  return res.status(404).send({
-                        status: "error",
-                        payload: "Error al agregar el producto al carrito"
-                  });
-
-            };
+            validateData(!result, res, "No se pudo eliminar el producto");
 
             res.send({
-                  status: "success",
-                  payload: `Producto con id: ${pid} agregado al carrito con id: ${id}`
+                  status: 'success',
+                  payload: result,
             });
 
       } catch (error) {
 
-            console.log("Error en addProduct de carts: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            handleTryErrorDB(error);
 
       };
 
 });
 
-cartsRouter.delete('/:id', async (req, res) => {
+cartsRouter.delete('/:cid', async (req, res) => {
 
       try {
 
             const {
-                  id
+                  cid
             } = req.params;
 
-            let carts = await cartsManager.getAll();
+            const result = await cartsManager.deleteAllProducts(cid);
 
-            if (!carts) return res.status(404).send({
-                  status: "error",
-                  payload: "No hay carritos en la base de datos"
-            });
-
-            let cartToDelete = carts.find(cart => cart.id === parseInt(id));
-
-            if (!cartToDelete) return res.status(404).send({
-                  status: "error",
-                  payload: "No existe un carrito con ese id"
-            });
-
-            let result = await cartsManager.deleteById(id);
-
-            if (!result) return res.status(404).send({
-                  status: "error",
-                  payload: "Error al eliminar el carrito"
-            });
+            validateData(!result, res, "No se pudo eliminar el carrito");
 
             res.send({
-                  status: "success",
-                  payload: `Carrito con id: ${id} eliminado correctamente`
+                  status: 'success',
+                  payload: result,
             });
 
       } catch (error) {
 
-            console.log("Error en delete de carts: ", error);
-
-            res.send({
-                  status: "error",
-                  payload: error
-            });
+            handleTryErrorDB(error);
 
       };
 

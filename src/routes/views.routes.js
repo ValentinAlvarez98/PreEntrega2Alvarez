@@ -7,10 +7,14 @@ import {
       validateData
 } from '../helpers/handleErrors.js';
 import Products from "../dao/dbManagers/products.js";
+import Carts from "../dao/dbManagers/carts.js";
+
 import ProductsFs from "../dao/fileManagers/products.js";
 
 // Se crean las instancias de los Managers.
 const productsManager = new Products();
+const cartsManager = new Carts();
+
 const productsFsManager = new ProductsFs();
 
 // Se crea el enrutador.
@@ -131,5 +135,47 @@ router.get('/products/:id', async (req, res) => {
 
 });
 
-// Se exporta el enrutador de las vistas.
+// Ruta para obtener un carrito por su id.
+router.get('/carts/:cartId', async (req, res) => {
+
+      try {
+
+            // Se obtiene el id del carrito desde los parámetros.
+            const {
+                  cartId
+            } = req.params;
+
+            // Se obtiene el carrito desde el Manager.
+            const cart = await cartsManager.getById(cartId);
+
+            // Se valida que el carrito exista.
+            validateData(!cart, res, 'Carrito no encontrado');
+
+            // Se transforma el carrito a un objeto para poder modificarlo.
+            const cartData = cart.toObject();
+
+            // Se inicializa el subtotal.
+            let subtotal = 0;
+
+            // Se calcula el subtotal del carrito.
+            cartData.products.forEach((product) => {
+                  subtotal += product.product.price * product.quantity;
+            });
+
+            // Se agrega el subtotal al carrito.
+            cartData.subtotal = subtotal;
+
+            // Se renderiza la vista cartDetail, pasando el carrito como parámetro.
+            res.render('cartDetail', {
+                  cart: cartData,
+            });
+
+      } catch (error) {
+
+            handleTryError(res, error);
+
+      };
+
+});
+
 export default router;

@@ -1,5 +1,14 @@
+// Se importan los modelos de la base de datos.
 import cartsModel from '../models/carts.js';
+import productsModel from '../models/products.js';
 
+// Se importan las funciones de manejo de errores.
+import {
+      handleTryErrorDB,
+      validateDataDB
+} from '../../helpers/handleErrors.js';
+
+// Se crea la clase CartsManager.
 export default class CartsManager {
 
       constructor() {
@@ -8,41 +17,45 @@ export default class CartsManager {
 
       };
 
+      // Se crea el método getAll.
       getAll = async () => {
 
             try {
 
+                  // Se obtienen todos los carritos de la base de datos.
                   let carts = await cartsModel.find().lean();
 
-                  if (!carts) {
+                  // Se valida si no hay carritos y se envía un mensaje de error al cliente.
+                  validateDataDB(!carts, "No hay carritos en la base de datos");
 
-                        console.log("No hay carritos en la base de datos");
-
-                  };
-
+                  // Se retorna el array de carritos.
                   return carts;
 
             } catch (error) {
 
-                  console.log("Error en getAll de carts: ", error);
+                  handleTryErrorDB(error);
 
             };
 
       };
 
+      // Se crea el método saveCart.
       saveCart = async (cart) => {
 
             try {
 
+                  // Se busca un carrito con un id específico.
                   const existingCart = await cartsModel.findOne({
                         id: cart.id
                   });
 
+                  // Si existe un carrito con ese id, se actualiza.
                   if (existingCart) {
 
                         existingCart.products = cart.products;
                         return await existingCart.save();
 
+                        // Si no existe un carrito con ese id, se crea.
                   } else {
 
                         return await cartsModel.create(cart);
@@ -51,103 +64,207 @@ export default class CartsManager {
 
             } catch (error) {
 
-                  console.log("Error en saveCart: ", error);
-                  return null;
+                  handleTryErrorDB(error);
 
             };
 
       };
 
-      getById = async id => {
+      // Se crea el método getById.
+      getById = async (cid) => {
 
             try {
 
+                  // Se busca un carrito con un id específico.
                   const cart = await cartsModel.findOne({
-                        id
-                  });
+                        id: cid
+                  }).populate('products.product');
 
-                  if (!cart) {
-                        console.log("No existe un carrito con ese id");
-                  }
+                  // Se valida si no existe un carrito con ese id y se envía un mensaje de error al cliente.
+                  validateDataDB(!cart, "No se encontró el carrito con el id especificado");
 
+                  // Se retorna el carrito.
                   return cart;
 
             } catch (error) {
 
-                  console.log("Error en getById: ", error);
+                  handleTryErrorDB(error);
 
             };
 
       };
 
-      addProduct = async (cart, productId) => {
+      // Se crea el método addProduct.
+      addProduct = async (id, products) => {
 
             try {
-                  const existingProduct = cart.products.find(product => parseInt(product.product) === parseInt(productId));
 
-                  if (existingProduct) {
+                  // Se busca un carrito con un id específico.
+                  const cart = await cartsModel.findOne({
+                        id
+                  });
 
-                        existingProduct.quantity += 1;
+                  // Se valida que exista un carrito con ese id.
+                  validateDataDB(!cart, "No existe un carrito con ese id");
 
-                        await cartsModel.updateOne({
-                              id: cart.id,
-                              "products.product": productId
-                        }, {
-                              $set: {
-                                    "products.$.quantity": existingProduct.quantity
-                              }
-                        });
+                  for (const product of products) {
 
+                        // Se obtiene el id del producto del objeto recibido.
+                        const productId = product.product;
 
-                  } else {
+                        // Se busca el producto  por su id en el carrito actual.
+                        const existingProduct = cart.products.find((p) => p.product.toString() === productId);
 
-                        const newProduct = {
-                              product: productId,
-                              quantity: 1
+                        // Si el producto no existe en el carrito, se agrega.
+                        if (!existingProduct) {
+
+                              // Se busca el producto en la base de datos por su id.
+                              const productToAdd = await productsModel.findById(productId);
+
+                              // Se valida que exista un producto con ese id.
+                              validateDataDB(!productToAdd, "No existe un producto con ese id");
+
+                              // Se agrega el producto al carrito con su cantidad correspondiente.
+                              cart.products.push({
+                                    product: productToAdd._id,
+                                    quantity: product.quantity,
+                              });
+
+                        } else {
+
+                              handleTryErrorDB("El producto ya existe en el carrito");
+
                         };
-
-                        cart.products.push(newProduct);
 
                   };
 
                   const result = await cart.save();
 
-                  if (result) {
-
-                        console.log("Producto agregado al carrito en la base de datos");
-
-                  };
-
                   return result;
 
             } catch (error) {
 
-                  console.log("Error en addProduct: ", error);
+                  handleTryErrorDB(error);
 
             };
 
       };
 
+      // Se crea el método deleteById.
       deleteById = async id => {
 
             try {
 
+                  // Se elimina el carrito de la base de datos utilizando el id.
                   let result = await cartsModel.deleteOne({
                         id: id
                   });
 
-                  if (result) {
-
-                        console.log("Carrito eliminado de la base de datos");
-
-                  };
+                  // Se valida si se eliminó el carrito y se envía un mensaje de error al cliente si no se eliminó.
+                  validateDataDB(result, "Se eliminó el carrito de la base de datos");
 
                   return result;
 
+            } catch (error) {
+
+                  handleTryErrorDB(error);
+
+            };
+
+      };
+
+      // Se crea el método updateProductQuantity.
+      updateProductQuantity = async (cartId, productId, quantity) => {
+
+            try {
+
+                  const cart = await cartsModel.findOne({
+                        id: cartId
+                  });
+
+                  // Se valida si existe un carrito con ese id.
+                  validateDataDB(!cart, "No existe un carrito con ese id");
+
+                  // Se busca el producto en el carrito por su id.
+                  const product = cart.products.find((product) => product.product.toString() === productId);
+
+                  // Se valida si el producto existe en el carrito.
+                  validateDataDB(!product, "El producto no existe en el carrito");
+
+                  product.quantity = quantity;
+
+                  const result = await cart.save();
+
+                  // Se valida si se pudo actualizar la cantidad del producto y se envía un mensaje de error al cliente si no se pudo.
+                  validateDataDB(!result, "No se pudo actualizar la cantidad del producto");
+
+                  return result;
 
             } catch (error) {
 
-                  console.log("Error en deleteById: ", error);
+                  handleTryErrorDB(error);
+
+            };
+
+      };
+
+      // Se crea el método deleteProduct.
+      deleteProduct = async (cartId, productId) => {
+
+            try {
+
+                  const cart = await cartsModel.findOne({
+                        id: cartId
+                  });
+
+                  // Se valida si existe un carrito con ese id.
+                  validateDataDB(!cart, "No existe un carrito con ese id");
+
+                  const productIndex = cart.products.findIndex((product) => product.product.toString() === productId);
+
+                  // Se valida si el producto existe en el carrito.
+                  if (productIndex === -1) {
+                        validateDataDB(true, "El producto no existe en el carrito");
+                  }
+
+                  cart.products.splice(productIndex, 1);
+
+                  const result = await cart.save();
+
+                  // Se valida si se pudo eliminar el producto del carrito y se envía un mensaje de error al cliente si no se pudo.
+                  validateDataDB(!result, "No se pudo eliminar el producto del carrito");
+
+                  return result;
+
+            } catch (error) {
+
+                  handleTryErrorDB(error);
+
+            };
+
+      };
+
+      // Se crea el método deleteAllProducts.
+      deleteAllProducts = async (cartId) => {
+
+            try {
+
+                  const cart = await cartsModel.findOne({
+                        id: cartId
+                  });
+
+                  // Se valida si existe un carrito con ese id.
+                  validateDataDB(!cart, "No existe un carrito con ese id");
+
+                  cart.products = [];
+
+                  const result = await cart.save();
+
+                  return result;
+
+            } catch (error) {
+
+                  handleTryErrorDB(error);
 
             };
 

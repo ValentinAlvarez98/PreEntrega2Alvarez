@@ -6,7 +6,7 @@ const cartsSchema = mongoose.Schema({
       products: [{
             product: {
                   type: mongoose.Schema.Types.ObjectId,
-                  ref: "products",
+                  ref: "products", // Asegúrate de que el nombre aquí sea el mismo que el usado para el modelo de Product (products.js)
                   required: true,
             },
             quantity: {
